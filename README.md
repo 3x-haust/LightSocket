@@ -9,7 +9,7 @@ This guide follows the code in this repository and walks through server setup, e
 ## Installation
 
 ```bash
-npm install lightsocket
+npm install @3xhaust/lightsocket
 ```
 
 ## Core idea
@@ -27,7 +27,7 @@ Create an HTTP server and initialize `createLightSocketServer()`.
 ```ts
 import express from "express";
 import http from "node:http";
-import { createLightSocketServer } from "lightsocket/server";
+import { createLightSocketServer } from "@3xhaust/lightsocket/server";
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -47,7 +47,7 @@ const ls = createLightSocketServer({
 Define your namespace and handlers with `defineEvents(namespace, handlers)`.
 
 ```ts
-import { defineEvents } from "lightsocket/server";
+import { defineEvents } from "@3xhaust/lightsocket/server";
 
 export default defineEvents("chat", {
 	join(ctx, payload) {
@@ -91,7 +91,7 @@ httpServer.listen(3000);
 Create a client with `createClient()`, then wrap it with the generated SDK.
 
 ```tsx
-import { createClient } from "lightsocket/client";
+import { createClient } from "@3xhaust/lightsocket/client";
 import { createLightsocketSdk } from "./generated/lightsocket-sdk";
 
 const client = createClient("ws://localhost:3000/realtime", {

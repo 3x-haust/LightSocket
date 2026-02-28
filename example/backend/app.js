@@ -1,6 +1,6 @@
 import express from "express";
 import http from "node:http";
-import { createLightSocketServer } from "lightsocket/server";
+import { createLightSocketServer } from "@3xhaust/lightsocket/server";
 
 const app = express();
 const httpServer = http.createServer(app);

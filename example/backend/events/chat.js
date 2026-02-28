@@ -1,4 +1,4 @@
-import { defineEvents } from "lightsocket/server";
+import { defineEvents } from "@3xhaust/lightsocket/server";
 
 const roomMembers = new Map();
 

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 
-echo "현재 버전: $(npm version --json | jq -r '."lightsocket"')"
+set -e
+
+pkg_name="$(node -p "require('./package.json').name")"
+pkg_version="$(node -p "require('./package.json').version")"
+
+echo "패키지: ${pkg_name}"
+echo "현재 버전: ${pkg_version}"
 echo "버전 선택 (엔터 없이 한 글자): [p]atch [m]inor [j]major [s]kip"
 
 read -r -n 1 version_key

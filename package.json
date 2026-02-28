@@ -1,5 +1,5 @@
 {
-  "name": "lightsocket",
+  "name": "@3xhaust/lightsocket",
   "version": "1.0.0",
   "description": "Event-first realtime socket library",
   "main": "./dist/index.js",

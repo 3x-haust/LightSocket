@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { createClient } from "lightsocket/client";
+import { createClient } from "@3xhaust/lightsocket/client";
 import { createLightsocketSdk } from "./generated/lightsocket-sdk";
 
 type ChatMessage = {
