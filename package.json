@@ -1,6 +1,6 @@
 {
   "name": "lightsocket",
-  "version": "2.0.0",
+  "version": "1.0.0",
   "description": "Event-first realtime socket library",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -39,8 +39,8 @@
     "socket",
     "typescript"
   ],
-  "author": "3x-haust",
-  "license": "ISC",
+  "author": "3xhaust",
+  "license": "MIT",
   "dependencies": {
     "ws": "^8.19.0"
   },
