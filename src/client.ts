@@ -10,10 +10,16 @@ type OutgoingPacket = {
   payload?: unknown;
 };
 
+export type LightSocketClientEventMap = Record<string, unknown>;
+
+type EventName<TEvents extends LightSocketClientEventMap> = Extract<keyof TEvents, string>;
+
 type EventHandler<TPayload = unknown> = (payload: TPayload) => void;
 
-export interface LightSocketClient {
+export interface LightSocketClient<TEvents extends LightSocketClientEventMap = LightSocketClientEventMap> {
+  emit<TKey extends EventName<TEvents>>(event: TKey, payload: TEvents[TKey]): void;
   emit<TPayload>(event: string, payload: TPayload): void;
+  on<TKey extends EventName<TEvents>>(event: TKey, handler: EventHandler<TEvents[TKey]>): () => void;
   on<TPayload>(event: string, handler: EventHandler<TPayload>): () => void;
   disconnect(): void;
 }
@@ -35,8 +41,11 @@ function appendToken(url: string, token?: string): string {
   return resolved.toString();
 }
 
-export function createClient(url: string, options: LightSocketClientOptions = {}): LightSocketClient {
-  const listeners = new Map<string, Set<EventHandler>>();
+export function createClient<TEvents extends LightSocketClientEventMap = LightSocketClientEventMap>(
+  url: string,
+  options: LightSocketClientOptions = {}
+): LightSocketClient<TEvents> {
+  const listeners = new Map<string, Set<EventHandler<unknown>>>();
   const queue: OutgoingPacket[] = [];
   const autoReconnect = options.autoReconnect ?? true;
   const reconnectInterval = options.reconnectInterval ?? 1000;
@@ -132,8 +141,11 @@ export function createClient(url: string, options: LightSocketClientOptions = {}
   }
 
   function on<TPayload>(event: string, handler: EventHandler<TPayload>): () => void {
-    const existing = listeners.get(event) ?? new Set<EventHandler>();
-    existing.add(handler as EventHandler);
+    const existing = listeners.get(event) ?? new Set<EventHandler<unknown>>();
+    const wrapped: EventHandler<unknown> = (payload) => {
+      handler(payload as TPayload);
+    };
+    existing.add(wrapped);
     listeners.set(event, existing);
 
     return () => {
@@ -141,7 +153,7 @@ export function createClient(url: string, options: LightSocketClientOptions = {}
       if (!target) {
         return;
       }
-      target.delete(handler as EventHandler);
+      target.delete(wrapped);
       if (target.size === 0) {
         listeners.delete(event);
       }

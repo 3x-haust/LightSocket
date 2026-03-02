@@ -17,24 +17,39 @@ type OutgoingEventPacket = {
   payload?: unknown;
 };
 
-type EventHandler = (ctx: LightSocketContext, payload: unknown) => unknown | Promise<unknown>;
+export type LightSocketEventMap = Record<string, unknown>;
 
-type EventModule = Record<string, EventHandler>;
+type EventName<TEvents extends LightSocketEventMap> = Extract<keyof TEvents, string>;
 
-export interface LightSocketClientState {
+type EventHandler<TUser, TEvents extends LightSocketEventMap> = (
+  ctx: LightSocketContext<TUser, TEvents>,
+  payload: TEvents[EventName<TEvents>]
+) => unknown | Promise<unknown>;
+
+type EventModule<TUser, TEvents extends LightSocketEventMap> = Record<string, EventHandler<TUser, TEvents>>;
+
+export interface LightSocketClientState<TUser = unknown> {
   id: string;
-  user: unknown;
+  user: TUser | null;
   token: string | null;
 }
 
-export interface LightSocketContext {
+export interface LightSocketContext<TUser = unknown, TEvents extends LightSocketEventMap = LightSocketEventMap> {
   clientId: string;
-  user: unknown;
+  user: TUser | null;
   event: string;
   joinRoom(room: string): void;
   leaveRoom(room: string): void;
+  emit<TKey extends EventName<TEvents>>(event: TKey, payload: TEvents[TKey]): void;
   emit(event: string, payload?: unknown): void;
+  emitToRoom<TKey extends EventName<TEvents>>(
+    room: string,
+    event: TKey,
+    payload: TEvents[TKey],
+    options?: { excludeSelf?: boolean }
+  ): void;
   emitToRoom(room: string, event: string, payload?: unknown, options?: { excludeSelf?: boolean }): void;
+  broadcast<TKey extends EventName<TEvents>>(event: TKey, payload: TEvents[TKey], options?: { excludeSelf?: boolean }): void;
   broadcast(event: string, payload?: unknown, options?: { excludeSelf?: boolean }): void;
 }
 
@@ -43,16 +58,21 @@ export interface LightSocketServerSdkOptions {
   mode?: "esm" | "cjs";
 }
 
-export interface LightSocketServerOptions {
-  httpServer: unknown;
+export interface LightSocketServerOptions<
+  TUser = unknown,
+  TAuthResult extends TUser = TUser,
+  THttpServer = unknown,
+  TEvents extends LightSocketEventMap = LightSocketEventMap,
+> {
+  httpServer: THttpServer;
   eventsDir: string;
   namespace?: string;
-  auth?: (token: string | null, client: LightSocketClientState) => unknown | Promise<unknown>;
+  auth?: (token: string | null, client: LightSocketClientState<TUser>) => TAuthResult | Promise<TAuthResult>;
   sdk?: LightSocketServerSdkOptions;
 }
 
-interface ConnectedClient {
-  state: LightSocketClientState;
+interface ConnectedClient<TUser> {
+  state: LightSocketClientState<TUser>;
   ws: WebSocket;
   rooms: Set<string>;
 }
@@ -63,22 +83,30 @@ export interface LightSocketServer {
   stop(): Promise<void>;
 }
 
-export interface DefinedEventModule {
+export interface DefinedEventModule<TUser, TEvents extends LightSocketEventMap> {
   __ls_namespace: string;
-  handlers: EventModule;
+  handlers: EventModule<TUser, TEvents>;
 }
 
-export function defineEvents(namespace: string, handlers: EventModule): DefinedEventModule {
+export function defineEvents<TUser = unknown, TEvents extends LightSocketEventMap = LightSocketEventMap>(
+  namespace: string,
+  handlers: EventModule<TUser, TEvents>
+): DefinedEventModule<TUser, TEvents> {
   return {
     __ls_namespace: namespace,
     handlers,
   };
 }
 
-export function createLightSocketServer(options: LightSocketServerOptions): LightSocketServer {
+export function createLightSocketServer<
+  TUser = unknown,
+  TAuthResult extends TUser = TUser,
+  THttpServer = unknown,
+  TEvents extends LightSocketEventMap = LightSocketEventMap,
+>(options: LightSocketServerOptions<TUser, TAuthResult, THttpServer, TEvents>): LightSocketServer {
   const namespace = options.namespace ?? "/";
-  const clients = new Map<string, ConnectedClient>();
-  const events = new Map<string, EventHandler>();
+  const clients = new Map<string, ConnectedClient<TUser>>();
+  const events = new Map<string, EventHandler<TUser, TEvents>>();
   const eventSpec: Record<string, string[]> = {};
   let wss: WebSocketServer | null = null;
   let started = false;
@@ -103,10 +131,10 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
     return files.flat();
   }
 
-  function toEventMap(mod: unknown): EventModule {
-    const candidate = mod as Partial<DefinedEventModule> & EventModule;
+  function toEventMap(mod: unknown): EventModule<TUser, TEvents> {
+    const candidate = mod as Partial<DefinedEventModule<TUser, TEvents>> & EventModule<TUser, TEvents>;
     if (candidate && typeof candidate === "object" && typeof candidate.__ls_namespace === "string" && candidate.handlers) {
-      const namespaced: EventModule = {};
+      const namespaced: EventModule<TUser, TEvents> = {};
       Object.entries(candidate.handlers).forEach(([name, handler]) => {
         if (typeof handler === "function") {
           namespaced[`${candidate.__ls_namespace}.${name}`] = handler;
@@ -115,8 +143,8 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
       return namespaced;
     }
 
-    const plain = mod as EventModule;
-    const mapped: EventModule = {};
+    const plain = mod as EventModule<TUser, TEvents>;
+    const mapped: EventModule<TUser, TEvents> = {};
     Object.entries(plain).forEach(([key, handler]) => {
       if (typeof handler === "function") {
         mapped[key] = handler;
@@ -195,14 +223,20 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
     await fs.writeFile(outPath, lines.join("\n"), "utf8");
   }
 
-  function sendPacket(client: ConnectedClient, packet: OutgoingEventPacket): void {
+  function sendPacket(client: ConnectedClient<TUser>, packet: OutgoingEventPacket): void {
     if (client.ws.readyState !== WebSocket.OPEN) {
       return;
     }
     client.ws.send(JSON.stringify(packet));
   }
 
-  function emitToRoom(sender: ConnectedClient, room: string, event: string, payload: unknown, optionsArg?: { excludeSelf?: boolean }): void {
+  function emitToRoom(
+    sender: ConnectedClient<TUser>,
+    room: string,
+    event: string,
+    payload: unknown,
+    optionsArg?: { excludeSelf?: boolean }
+  ): void {
     const excludeSelf = optionsArg?.excludeSelf ?? false;
     clients.forEach((target) => {
       if (!target.rooms.has(room)) {
@@ -215,7 +249,12 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
     });
   }
 
-  function broadcast(sender: ConnectedClient, event: string, payload: unknown, optionsArg?: { excludeSelf?: boolean }): void {
+  function broadcast(
+    sender: ConnectedClient<TUser>,
+    event: string,
+    payload: unknown,
+    optionsArg?: { excludeSelf?: boolean }
+  ): void {
     const excludeSelf = optionsArg?.excludeSelf ?? false;
     clients.forEach((target) => {
       if (excludeSelf && target.state.id === sender.state.id) {
@@ -225,12 +264,12 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
     });
   }
 
-  async function handleEmit(client: ConnectedClient, packet: IncomingEmitPacket): Promise<void> {
+  async function handleEmit(client: ConnectedClient<TUser>, packet: IncomingEmitPacket): Promise<void> {
     const handler = events.get(packet.event);
     if (!handler) {
       return;
     }
-    const ctx: LightSocketContext = {
+    const ctx: LightSocketContext<TUser, TEvents> = {
       clientId: client.state.id,
       user: client.state.user,
       event: packet.event,
@@ -251,7 +290,7 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
       },
     };
 
-    await handler(ctx, packet.payload);
+    await handler(ctx, packet.payload as TEvents[EventName<TEvents>]);
   }
 
   async function build(): Promise<void> {
@@ -273,7 +312,7 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
     wss.on("connection", async (ws, request) => {
       const requestUrl = new URL(request.url ?? namespace, "http://localhost");
       const token = requestUrl.searchParams.get("token");
-      const clientState: LightSocketClientState = {
+      const clientState: LightSocketClientState<TUser> = {
         id: crypto.randomUUID(),
         user: null,
         token,
@@ -288,7 +327,7 @@ export function createLightSocketServer(options: LightSocketServerOptions): Ligh
         clientState.user = user;
       }
 
-      const client: ConnectedClient = {
+      const client: ConnectedClient<TUser> = {
         state: clientState,
         ws,
         rooms: new Set(),
